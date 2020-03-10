@@ -12,7 +12,7 @@ let tableItem = new Vue({
 		filterSku: "",
 		filterDescription: "",
 		filterCategoryName: [],
-		filterWeight: 1,
+		filterWeight: 0,
 		filterCostPrice: 0,
 		filterRetailPrice: 0,
 		filterCompanyName: [],
