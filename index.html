@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+	<link rel="stylesheet" href="bullseye.css" />
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css"
+		integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous" />
+	<script src="./utils/vue.js"></script>
+	<script src="./utils/axios/dist/axios.min.js"></script>
+	<script src="https://code.jquery.com/jquery-3.4.1.slim.min.js"
+		integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous">
+	</script>
+	<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
+		integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous">
+	</script>
+	<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js"
+		integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous">
+	</script>
+
+	<title>BullsEye</title>
+</head>
+
+<body>
+	<nav class="navbar bg-dark sticky-top bg-dark text-light">
+		<a class="navbar-brand rounded-lg" href="#"><img src="./utils/BE.jpg" class="icon"></a>
+		<h1>BullsEyes Sporting Goods Company</h1>
+	</nav>
+	<div id="root">
+		<div class="center">
+			<div>User ID</div>
+			<input class="form-control" type="text" v-model="userID" autocomplete="off"
+				v-bind:class="{'is-invalid': !validUserID}" />
+			<div v-show="!validUserID" class="invalid-feedback">Your username does not match.</div>
+			<div>Password</div>
+			<input class="form-control" type="password" v-model="password"
+				v-bind:class="{'is-invalid': !validPassword}" />
+			<div v-show="!validPassword" class="invalid-feedback">Your password does not match.</div>
+			<button @click="login()">Login</button>
+			<button @click="resetPassword()">Reset Password</button>
+		</div>
+		<div class="modal-custom" v-show="showForm">
+			<div class="modal-dialog-custom modal-dialog-centered-custom">
+				<div class="modal-content-custom">
+					<div class="modal-header">
+						<h2>Reset Password</h2>
+					</div>
+					<div class="modal-body">
+						<div>User ID</div>
+						<input type="text" class="form-control" v-model="userID">
+						<div v-show="!validUserID" class="invalid-feedback">User ID does not exist.</div>
+						<div>New Password</div>
+						<input type="password" class="form-control" v-model="newPassword" v-bind:class="{'is-invalid': !validNewPassword}">
+						<div v-show="!validNewPassword" class="invalid-feedback">The password must contain at least one
+							uppercase letter and one number.</div>
+						<div>Confirm New Password</div>
+						<input type="password" class="form-control" v-model="confirmPassword">
+						<div v-show="!validConfirmPassword" class="invalid-feedback">The password must be matching.
+						</div>
+					</div>
+					<div class="modal-footer">
+						<button @click="submitPassword()" class="btn btn-primary">Submit</button>
+						<button @click="cancelForm()" class="btn btn-secondary">Cancel</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script src="utils.js"></script>
+	<script src="login.js"></script>
+</body>
+
+</html>

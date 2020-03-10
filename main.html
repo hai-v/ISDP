@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+	<!--<script src="https://cdn.jsdelivr.net/npm/lodash@4.17.15/lodash.min.js"></script>-->
+	<link rel="stylesheet" href="bullseye.css" />
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css"
+		integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous" />
+	<script src="./utils/vue.js"></script>
+	<script src="https://code.jquery.com/jquery-3.4.1.slim.min.js"
+		integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous">
+	</script>
+	<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
+		integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous">
+	</script>
+	<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js"
+		integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous">
+	</script>
+	<script src="./utils/axios/dist/axios.min.js"></script>
+	<title>BullsEye</title>
+</head>
+
+<body>
+	<nav id="root" class="navbar navbar-dark bg-dark sticky-top">
+		<a class="navbar-brand rounded-lg" href="#"><img src="./utils/BE.jpg" class="icon"></a>
+		<h1 class="text-light">Welcome {{ curUser.userID }} - {{ curUser.description }}</h1>
+		<div class="btn-group">
+			<button type="button" class="btn" data-toggle="collapse" data-target="#tableOrder"
+				v-if="canReadOrder">Order</button>
+			<button type="button" class="btn" data-toggle="collapse" data-target="#tableInventory"
+				v-if="canReadInventory">Inventory</button>
+			<button type="button" class="btn" data-toggle="collapse" data-target="#tableItem"
+				v-if="canReadItem">Item</button>
+			<button type="button" class="btn" data-toggle="collapse" data-target="#tableLocation"
+				v-if="canReadLocation">Location</button>
+			<button type="button" class="btn" data-toggle="collapse" data-target="#tableCourier"
+				v-if="canReadCourier">Courier</button>
+			<button type="button" class="btn" data-toggle="collapse" data-target="#tableUser"
+				v-if="canReadUser">User</button>
+			<button type="button" class="btn" id="btnLogout">Logout</button>
+		</div>
+	</nav>
+	<div id="mainForm">
+		<div id="tableOrder" class="collapse container-fluid row" data-parent="#mainForm">
+			<div class="col-sm-2">
+				<div class="sticky">
+					<button type="button" class="btn" @click="readTransaction()">Get Order</button>
+					<button type="button" class="btn" @click="submitAllOrders()" v-if="canSubmitAllOrders">Submit All
+						Orders</button>
+					<button type="button" class="btn" v-if="canReadBackorderItems" @click="readBackorder()">Items on
+						Backorder</button>
+					<button type="button" class="btn" @click="createEmergencyOrder()"
+						v-if="canCreateEmergencyOrder">Create Emergency Order</button>
+					<h2>Search Order ({{ filteredOrders.length }})</h2>
+					<div>Transaction ID</div>
+					<input type="text" v-model="filterTransactionID" class="form-control">
+					<div>Transaction Type</div>
+					<div v-for="tt in transactionType">
+						<input type="checkbox" :id="tt.transactionType" :value="tt.transactionType"
+							v-model="filterTransactionType" />
+						<label class="form-check-label" :for="tt.transactionType">{{ tt.transactionType }}</label>
+					</div>
+					<div>Source Location</div>
+					<div v-for="l in location">
+						<input type="checkbox" :id="l.locationID" :value="l.locationID"
+							v-model="filterOriginalLocationID" />
+						<label class="form-check-label" :for="l.locationID">{{ l.locationID }}</label>
+					</div>
+					<div>Transaction Status</div>
+					<div v-for="ts in transactionStatus">
+						<input type="checkbox" :id="ts.transactionStatus" :value="ts.transactionStatus"
+							v-model="filterTransactionStatus" />
+						<label class="form-check-label" :for="ts.transactionStatus">{{ ts.transactionStatus }}</label>
+					</div>
+					<div>Notes</div>
+					<input type="text" v-model="filterNotes" class="form-control">
+				</div>
+			</div>
+			<div class="col-sm-10">
+				<table class="table table-bordered table-hover">
+					<thead class="thead-dark">
+						<tr>
+							<th class="sticky" scope="col" v-for="(value, name) in header">
+								{{ name }}
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="(o, index) in filteredOrders">
+							<td class="align-center">{{ o.transactionID }}</td>
+							<td>{{ o.transactionType }}</td>
+							<td>{{ o.originalLocationID }}</td>
+							<td>{{ formatDate(o.creationDate) }}</td>
+							<td>{{ readDueDate(o) }}</td>
+							<td>{{ formatDate(o.estimatedArrival) }}</td>
+							<td>
+								<select class="form-control" v-model="o.transactionStatus"
+									:disabled="!canUpdateTransactionStatus">
+									<option v-for="ts in transactionStatus" :value="ts.transactionStatus">
+										{{ ts.transactionStatus }}
+									</option>
+								</select>
+							</td>
+							<td>{{ o.sourceTransactionID }}</td>
+							<td class="overflow_notes">{{ o.notes }}</td>
+							<td>
+								<button type="button" class="btn" @click="readOrder(o)">View Order</button>
+								<button type="button" class="btn" @click="processOrder(o)"
+								v-if="canProcessOrder(o)">Process
+								Order</button>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+			<div class="modal-custom" v-show="showFormOrder">
+				<div class="modal-dialog-custom modal-dialog-centered-custom">
+					<div class="modal-content-custom">
+						<div class="modal-header">
+							<h2>View Order</h2>
+						</div>
+						<div class="modal-body">
+							<table class="table table-bordered table-sm table-hover">
+								<thead class="thead-dark">
+									<tr>
+										<th scope="col" v-for="(value, name) in headerOrder">
+											{{ name }}
+										</th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr v-for="(i, index) in order[1]">
+										<td>{{ i.itemID }}</td>
+										<td>{{ i.itemName }}</td>
+										<td>{{ i.description }}</td>
+										<td>{{ i.categoryName }}</td>
+										<td>{{ i.companyName }}</td>
+										<td><input name="integer" type="number" class="form-control align-right"
+												v-model.number="i.caseQuantity"
+												:disabled="!canChangeOrderQuantity(order[0])"
+												:change="updateOrderQuantity(order[0].transactionID, i)"></td>
+										<td class="align-right">X {{ i.caseSize }}</td>
+										<td>
+											<button type="button" class="btn" v-if="canProcessItem(order[0])" @click="processItem(order[0], i)">Process Item</button>
+											<button type="button" class="btn" v-if="canDeleteItem(order[0])"
+												@click="deleteItem(order[0], i)">Remove</button>
+										</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn" @click="createItem(order[0])"
+								v-if="canCreateItem(order[0])">Add Item</button>
+							<button type="button" class="btn" @click="submitOrder(order[0])"
+								v-if="canSubmitOrder(order[0])">Submit</button>
+							<button type="button" class="btn" @click="cancelFormOrder()">Close</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="modal-custom" v-show="showFormInventory">
+				<div class="modal-dialog-custom modal-dialog-centered-custom">
+					<div class="modal-content-custom">
+						<div class="modal-header">
+							<h2>Add Items</h2>
+						</div>
+						<div class="modal-body">
+							<input class="form-control" v-model="filterItem"
+								placeholder="Search by Item ID, Name, Description, Category Name or Supplier">
+							<table class="table table-bordered table-sm table-hover">
+								<thead class="thead-dark">
+									<tr>
+										<th scope="col" v-for="(value, name) in headerItems">
+											{{ name }}
+										</th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr v-for="(i, index) in items">
+										<td>{{ i.itemID }}</td>
+										<td>{{ i.itemName }}</td>
+										<td>{{ i.description }}</td>
+										<td>{{ i.categoryName }}</td>
+										<td>{{ i.companyName }}</td>
+										<td><input type="number" class="form-control align-right"
+												v-model.number="i.caseQuantity"></td>
+										<td class="align-right">X {{ i.caseSize }}</td>
+										<td>
+											<button type="button" class="btn" @click="addItemToTxn(i)">Add to
+												Order</button>
+										</td>
+									</tr>
+								</tbody>
+							</table>
+							<div class="container">
+								<div class="row justify-content-md-center">
+									<div class="col">
+										<input type="number" v-model.number="paginationIndexCurr"> of
+										{{ paginationIndexLast }}
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn" @click="cancelFormInventory()">Close</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="modal-custom" v-show="showFormBackorder">
+				<div class="modal-dialog-custom modal-dialog-centered-custom">
+					<div class="modal-content-custom">
+						<div class="modal-header">
+							<h2>View Items on Backorder</h2>
+						</div>
+						<div class="modal-body">
+							<table class="table table-bordered table-sm table-hover">
+								<thead class="thead-dark">
+									<tr>
+										<th>Item ID</th>
+										<th>Name</th>
+										<th>Description</th>
+										<th>Warehouse Quantity</th>
+										<th>Total Order Quantity</th>
+										<th></th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr v-for="(b, index) in backorder">
+										<td>{{ b.itemID }}</td>
+										<td>{{ b.itemName }}</td>
+										<td>{{ b.description }}</td>
+										<td>{{ b.quantity }}</td>
+										<td>{{ b.orderQuantity }}</td>
+										<td>
+											<button type="button" class="btn"
+												@click="modifyQuantity(b.itemID, b.quantity)">Modify Quantity</button>
+										</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn" @click="cancelFormBackorder()">Close</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="modal-custom" v-show="showFormQuantity">
+				<div class="modal-dialog-custom modal-dialog-centered-custom">
+					<div class="modal-content-custom">
+						<div class="modal-header">
+							<h2>Modify Quantity (MAX: {{ backorderTxn[0] }})</h2>
+						</div>
+						<div class="modal-body">
+							<table class="table table-bordered table-sm table-hover">
+								<thead class="thead-dark">
+									<tr>
+										<th>Transaction ID</th>
+										<th>Original Location ID</th>
+										<th>Modified Quantity</th>
+										<th>Ordered Quantity</th>
+										<th></th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr v-for="(b, index) in backorderTxn[1]">
+										<td>{{ b.transactionID }}</td>
+										<td>{{ b.originalLocationID }}</td>
+										<td><input type="number" v-model.number="b.newQuantity"></td>
+										<td>{{ b.quantity }}</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn" @click="autoModifyQuantity()">Auto Resolve</button>
+							<button type="button" class="btn" @click="submitFormQuantity()">Confirm</button>
+							<button type="button" class="btn" @click="cancelFormQuantity()">Close</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="modal-custom" v-show="showFormEmergencyAll">
+				<div class="modal-dialog-custom modal-dialog-centered-custom">
+					<div class="modal-content-custom">
+						<div class="modal-header">
+							<h2>Create Emergency Order</h2>
+						</div>
+						<div class="modal-body">
+							<div>Select a Store Location</div>
+							<div>Location</div>
+							<select class="form-control" v-model="emergencyLocationID">
+								<option v-for="l in location" :value="l.locationID">
+									{{ l.description }}
+								</option>
+							</select>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn" @click="submitFormEmergencyAll()">Submit</button>
+							<button type="button" class="btn" @click="cancelFormEmergencyAll()">Close</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div id="tableInventory" class="collapse container-fluid row " data-parent="#mainForm">
+			<div class="col-sm-2">
+				<div class="sticky">
+					<button type="button" class="btn" @click="readInventory()">Get Inventory</button>
+					<h2>Search Inventory ({{ filteredInventory.length }})</h2>
+					<div>Item ID</div>
+					<input type="text" v-model="filterItemID" class="form-control">
+					<div>Item Name</div>
+					<input type="text" @input="filterItemName = $event.target.value" class="form-control">
+					<div>Location</div>
+					<div v-for="l in location">
+						<input type="checkbox" :id="l.locationID" :value="l.description"
+							v-model="filterLocationDescription" />
+						<label class="form-check-label" :for="l.locationID">{{ l.description }}</label>
+					</div>
+					<div>SKU</div>
+					<input type="text" class="form-control" @input="filterSku = $event.target.value">
+					<div>Description</div>
+					<input type="text" class="form-control" @input="filterDescription = $event.target.value">
+					<div>Category</div>
+					<div v-for="ic in itemCategory">
+						<input type="checkbox" :id="ic.categoryName" :value="ic.categoryName"
+							v-model="filterCategoryName">
+						<label :for="ic.categoryName">{{ ic.categoryName }}</label>
+					</div>
+					<div>Status</div>
+					<input type="checkbox" :id="1" :value="1" v-model="filterInactive">
+					<label :for="1">Active</label>
+					<input type="checkbox" :id="0" :value="0" v-model="filterInactive">
+					<label :for="0">Inactive</label>
+				</div>
+			</div>
+			<div class="modal-custom" v-show="showForm">
+				<div class="modal-dialog-custom modal-dialog-centered-custom">
+					<div class="modal-content-custom">
+						<div class="modal-header">
+							<h2>{{ formType }}</h2>
+						</div>
+						<div class="modal-body">
+							<div>Item</div>
+							<input type="text" class="form-control" v-model="temp.itemName" disabled />
+							<div>Location</div>
+							<input type="text" class="form-control" v-model="temp.locationDescription" disabled />
+							<div>Reorder Threshold</div>
+							<input type="number" class="form-control" step="1"
+								:min="temp.locationID === 'WARE' ? temp.reorderThreshold : 0"
+								v-bind:class="{'is-invalid': !validReorderThreshold}" v-model="temp.reorderThreshold" />
+							<div v-show="!validReorderThreshold" class="invalid-feedback">Please enter a integer number
+								that is smaller or equal to Reorder Level</div>
+							<div>Reorder Level</div>
+							<input type="number" class="form-control" step="1"
+								:min="temp.locationID === 'WARE' ? temp.reorderLevel : 0" v-model="temp.reorderLevel"
+								v-bind:class="{'is-invalid': !validReorderLevel}" />
+							<div class="invalid-feedback" v-show="!validReorderLevel"> Please enter a integer number
+								that is bigger or equal to Reorder Threshold</div>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn" @click="submitInventory()" v-if="canUpdateInventory">Submit</button>
+							<button type="button" class="btn" @click="cancelForm()">Cancel</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="col-sm-10">
+				<table class="table table-bordered table-sm table-hover">
+					<thead class="thead-dark">
+						<tr>
+							<th class="sticky" scope="col" v-for="(value, name) in header" @click="sort">
+								{{ name }}
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="(inv, index) in filteredInventory">
+							<td class="align-center">{{ inv.itemID }}</td>
+							<td>{{ inv.itemName }}</td>
+							<td>{{ inv.locationDescription }}</td>
+							<td>{{ inv.sku }}</td>
+							<td>{{ inv.description }}</td>
+							<td>{{ inv.categoryName }}</td>
+							<td class="align-right">
+								{{ new Intl.NumberFormat('en-EN', { style: 'currency', currency: 'CAD' }).format(inv.costPrice) }}
+							</td>
+							<td class="align-right">
+								{{ new Intl.NumberFormat('en-EN', { style: 'currency', currency: 'CAD' }).format(inv.retailPrice) }}
+							</td>
+							<td class="align-right">{{ inv.quantity }}</td>
+							<td class="align-right">{{ inv.reorderThreshold }}</td>
+							<td class="align-right">{{ inv.reorderLevel }}</td>
+							<td class="align-center">
+								<input type="checkbox" :checked="inv.active" disabled />
+							</td>
+							<td>
+								<button type="button" class="btn" @click="updateInventory(index)"
+									v-if="canUpdateInventory(index)">
+									Update
+								</button>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+		<div id="tableItem" class="collapse container-fluid row" data-parent="#mainForm">
+			<div class="col-sm-2">
+				<div class="sticky">
+					<div>
+						<button type="button" class="btn" @click="readItem()">Get Item</button>
+						<button type="button" class="btn" v-if="canCreateItem" @click="createItem()">Create
+							Item</button>
+					</div>
+					<h2>Search Item ({{ filteredItem.length }})</h2>
+					<div>Item ID</div>
+					<input type="text" class="form-control" @input="filterItemID = $event.target.value" />
+					<div>Name</div>
+					<input type="text" class="form-control" @input="filterItemName = $event.target.value" />
+					<div>SKU</div>
+					<input type="text" class="form-control" @input="filterSku = $event.target.value" />
+					<div>Description</div>
+					<input type="text" class="form-control" @input="filterDescription = $event.target.value" />
+					<div>Category</div>
+					<div v-for="ic in itemCategory">
+						<input type="checkbox" :id="ic.categoryName" :value="ic.categoryName"
+							v-model="filterCategoryName" />
+						<label :for="ic.categoryName">{{ ic.categoryName }}</label>
+					</div>
+					<div>Cost Price</div>
+					<input type="number" step="0.01" min="0.00" />
+					<div>Retail Price</div>
+					<input type="number" step="0.01" min="0.00" />
+					<div>Supplier</div>
+					<div v-for="s in supplier">
+						<input type="checkbox" :id="s.companyName" :value="s.companyName" v-model="filterCompanyName" />
+						<label :for="s.companyName">{{ s.companyName }}</label>
+					</div>
+					<div>Notes</div>
+					<input type="text" class="form-control" @input="filterNotes = $event.target.value" />
+					<div>Status</div>
+					<input type="checkbox" :id="1" :value="1" v-model="filterInactive" />
+					<label :for="1">Active</label>
+					<input type="checkbox" :id="0" :value="0" v-model="filterInactive" />
+					<label :for="0">Inactive</label>
+				</div>
+			</div>
+			<div class="modal-custom" v-show="showForm">
+				<div class="modal-dialog-custom modal-dialog-centered-custom">
+					<div class="modal-content-custom">
+						<div class="modal-header">
+							<h2>{{ formType }} an Item</h2>
+						</div>
+						<div class="modal-body">
+							<div>Item Name</div>
+							<input type="text" class="form-control" v-model="temp.itemName" />
+							<div>SKU</div>
+							<input type="text" class="form-control" v-model="temp.sku" />
+							<div>Description</div>
+							<input type="text" class="form-control" v-model="temp.description" />
+							<div>Category Name</div>
+							<select class="form-control" v-model="temp.categoryName"
+								v-bind:class="{'is-invalid': !validCategoryName}">
+								<option v-for="c in itemCategory" :value="c.categoryName">
+									{{ c.categoryName }}
+								</option>
+							</select>
+							<div class="invalid-feedback" v-show="!validCategoryName">Category Name cannpt be empty
+							</div>
+							<div>Weight</div>
+							<input type="number" class="form-control" v-model="temp.weight"
+								v-bind:class="{'is-invalid': !validWeight}" />
+							<div class="invalid-feedback" v-show="!validWeight">Weight must be a decimal number, greater
+								or equal to 0</div>
+							<div>Cost Price</div>
+							<input type="number" class="form-control" v-model="temp.costPrice"
+								v-bind:class="{'is-invalid': !validCostPrice}" />
+							<div class="invalid-feedback" v-show="!validCostPrice">Cost Price must be a decimal number,
+								greater or equal to 0</div>
+							<div>Retail Price</div>
+							<input type="number" class="form-control" v-model="temp.retailPrice"
+								v-bind:class="{'is-invalid': !validRetailPrice}" />
+							<div class="invalid-feedback" v-show="!validRetailPrice">Retail Price must be a decimal
+								number, greater or equal to 0</div>
+							<div>Supplier</div>
+							<select class="form-control" v-model="temp.supplierID"
+								v-bind:class="{'is-invalid': !validSupplierID}">
+								<option v-for="s in supplier" :value="s.supplierID">
+									{{ s.companyName }}
+								</option>
+							</select>
+							<div class="invalid-feedback" v-show="!validSupplierID">Supplier cannot be empty</div>
+							<div>Case Size</div>
+							<input type="number" class="form-control" v-model="temp.caseSize"
+								v-bind:class="{'is-invalid': !validCaseSize}" />
+							<div class="invalid-feedback" v-show="!validCaseSize">Case size must be an interger number,
+								greater or equal to 0</div>
+							<div>Notes</div>
+							<input type="text" class="form-control" v-model="temp.notes" />
+							<div v-show="formType !== 'Create'">
+								<div>Active</div>
+								<input type="checkbox" v-model="temp.active" />
+							</div>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn" @click="submitForm()">Submit</button>
+							<button type="button" class="btn" @click="cancelForm()">Cancel</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="col-sm-10">
+				<table class="table table-bordered table-sm table-hover">
+					<thead class="thead-dark">
+						<tr>
+							<th class="sticky" v-for="(value, name) in header" @click="sort">
+								{{ name }}</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="(item, index) in filteredItem">
+							<td class="align-center">{{ item.itemID }}</td>
+							<td>{{ item.itemName }}</td>
+							<td>{{ item.sku }}</td>
+							<td>{{ item.description }}</td>
+							<td>{{ item.categoryName }}</td>
+							<td class="align-right">{{ item.weight }}</td>
+							<td class="align-right">
+								{{ new Intl.NumberFormat('en-EN', { style: 'currency', currency: 'CAD' }).format(item.costPrice) }}
+							</td>
+							<td class="align-right">
+								{{ new Intl.NumberFormat('en-EN', { style: 'currency', currency: 'CAD' }).format(item.retailPrice) }}
+							</td>
+							<td>{{ item.companyName }}</td>
+							<td class="align-right">{{ item.caseSize }}</td>
+							<td>{{ item.notes }}</td>
+							<td>
+								<input type="checkbox" :checked="item.active" disabled />
+							</td>
+							<td>
+								<button type="button" class="btn" v-if="canUpdateItem" @click="updateItem(index)">Update
+									Item</button>
+								<button type="button" class="btn" v-if="canDeleteItem"
+									@click="deleteItem(item.itemID)">Mark as Inactive</button>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+		<div id="tableLocation" class="collapse container-fluid row" data-parent="#mainForm">
+			<div class="col-sm-2">
+				<div class="sticky">
+					<div>
+						<button type="button" class="btn" @click="readLocation()">Get Location</button>
+						<button type="button" class="btn" v-if="canCreateLocation" @click="createLocation()">Create
+							Location</button>
+					</div>
+					<h2>Search Location ({{ filteredLocation.length }})</h2>
+					<div>Location ID</div>
+					<input type="text" class="form-control" @input="filterLocationID = $event.target.value" />
+					<div>Description</div>
+					<input type="text" class="form-control" @input="filterDescription = $event.target.value" />
+					<div>Address</div>
+					<input type="text" class="form-control" @input="filterAddress = $event.target.value" />
+					<div>City</div>
+					<input type="text" class="form-control" @input="filterCity = $event.target.value" />
+					<div>Province</div>
+					<div v-for="p in province">
+						<input type="checkbox" :id="p.provinceID" :value="p.provinceID" v-model="filterProvince">
+						<label :for="p.provinceID">{{ p.provinceID }}</label>
+					</div>
+					<div>Country</div>
+					<input type="text" class="form-control" @input="filterCountry = $event.target.value" />
+					<div>Location Type</div>
+					<div v-for="lt in locationType">
+						<input type="checkbox" :id="lt.locationTypeID" :value="lt.locationTypeID"
+							v-model="filterLocationTypeID" />
+						<label :for="lt.locationTypeID">{{ lt.locationTypeID }}</label>
+					</div>
+					<div>Delivery Day</div>
+					<div v-for="dd in deliveryDayCheckbox">
+						<input type="checkbox" :id="dd" :value="dd" v-model="filterDeliveryDay" />
+						<label :for="dd">{{ dd }}</label>
+					</div>
+					<div>Status</div>
+					<input type="checkbox" :id="1" :value="1" v-model="filterInactive" />
+					<label :for="1">Active</label>
+					<input type="checkbox" :id="0" :value="0" v-model="filterInactive" />
+					<label :for="0">Inactive</label>
+				</div>
+			</div>
+			<div class="modal-custom" v-show="showForm">
+				<div class="modal-dialog-custom modal-dialog-centered-custom">
+					<div class="modal-content-custom">
+						<div class="modal-header">
+							<h2>{{ formType }}</h2>
+						</div>
+						<div class="modal-body">
+							<div>Location ID</div>
+							<input type="text" class="form-control" v-model="temp.locationID"
+								v-bind:class="{'is-invalid': !validLocationID}" />
+							<div class="invalid-feedback" v-show="!validLocationID">Location ID cannot be empty</div>
+							<div>Description</div>
+							<input type="text" class="form-control" v-model="temp.description" />
+							<div>Address</div>
+							<input type="text" class="form-control" v-model="temp.address" />
+							<div>City</div>
+							<input type="text" class="form-control" v-model="temp.city" />
+							<div>Province</div>
+							<select class="form-control" v-model="temp.province"
+								v-bind:class="{'is-invalid': !validProvince}">
+								<option v-for="p in province" :value="p.provinceID">{{ p.provinceID }}</option>
+							</select>
+							<div class="invalid-feedback" v-show="!validProvince">Province cannot be empty</div>
+							<div>Postal Code</div>
+							<input type="text" class="form-control" v-model="temp.postalCode"
+								v-bind:class="{'is-invalid': !validPostalCode}" />
+							<div class="invalid-feedback" v-show="!validPostalCode">Postal Code must be in the format
+								A1A1A1, where A is the letter and 1 is a digit</div>
+							<div>Country</div>
+							<input type="text" class="form-control" v-model="temp.country" />
+							<div>Location Type</div>
+							<select class="form-control" v-model="temp.locationTypeID"
+								v-bind:class="{'is-invalid': !validLocationTypeID}">
+								<option v-for="lt in locationType" :value="lt.locationTypeID">{{ lt.locationTypeID }}
+								</option>
+							</select>
+							<div class="invalid-feedback" v-show="!validLocationTypeID">Location Type must be selected
+							</div>
+							<div>Delivery Day</div>
+							<select class="form-control" v-model="temp.deliveryDay"
+								v-bind:class="{'is-invalid': !validDeliveryDay}">
+								<option v-for="dd in deliveryDayValues" :value="dd">{{ dd === null ? "NULL" : dd }}
+								</option>
+							</select>
+							<div class="invalid-feedback" v-show="!validDeliveryDay">Delivery Day cannot be empty</div>
+							<div>Active</div>
+							<input type="checkbox" v-model="temp.active" />
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn" @click="submitForm()">Submit</button>
+							<button type="button" class="btn" @click="cancelForm()">Cancel</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="col-sm-10">
+				<table class="table table-bordered table-sm table-hover">
+					<thead class="thead-dark">
+						<tr>
+							<th class="sticky" v-for="(value, name) in header" @click="sort">
+								{{ name }}</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="(location, index) in filteredLocation">
+							<td>{{ location.locationID }}</td>
+							<td>{{ location.description }}</td>
+							<td>{{ location.address }}</td>
+							<td>{{ location.city }}</td>
+							<td>{{ location.province }}</td>
+							<td>{{ location.postalCode }}</td>
+							<td>{{ location.country }}</td>
+							<td>{{ location.locationTypeID }}</td>
+							<td>{{ location.deliveryDay }}</td>
+							<td>
+								<input type="checkbox" :checked="location.active" disabled />
+							</td>
+							<td>
+								<button type="button" class="btn" v-if="canUpdateLocation"
+									@click="updateLocation(index)">
+									Update
+								</button>
+								<button type="button" class="btn" v-if="canDeleteLocation"
+									@click="deleteLocation(location.locationID)">Mark as
+									Inactive</button>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+		<div id="tableCourier" class="collapse container-fluid row" data-parent="#mainForm">
+			<div class="col-sm-2">
+				<div class="sticky">
+					<div>
+						<button type="button" class="btn" @click="readCourier()">Get Courier</button>
+						<button type="button" class="btn" v-if="canCreateCourier" @click="createCourier()">Create
+							Courier</button>
+					</div>
+					<h2>Search Courier ({{ filteredCourier.length }})</h2>
+					<div>Courier ID</div>
+					<input type="text" class="form-control" @input="courierID = $event.target.value" />
+					<div>Name</div>
+					<input type="text" class="form-control" @input="courierName = $event.target.value" />
+					<div>Address</div>
+					<input type="text" class="form-control" @input="address = $event.target.value" />
+					<div>Email</div>
+					<input type="text" class="form-control" @input="courierEmail = $event.target.value" />
+					<div>Phone</div>
+					<input type="text" class="form-control" v-model="courierPhone" />
+					<div>Status</div>
+					<input type="checkbox" :id="1" :value="1" v-model="filterInactive" />
+					<label :for="1">Active</label>
+					<input type="checkbox" :id="0" :value="0" v-model="filterInactive" />
+					<label :for="0">Inactive</label>
+				</div>
+			</div>
+			<div class="modal-custom" v-show="showForm">
+				<div class="modal-dialog-custom modal-dialog-centered-custom">
+					<div class="modal-content-custom">
+						<div class="modal-header">
+							<h2>{{ formType }} an User</h2>
+						</div>
+						<div class="modal-body">
+							<div>Name</div>
+							<input type="text" class="form-control" v-model="temp.courierName">
+							<div>Address</div>
+							<input type="text" class="form-control" v-model="temp.address">
+							<div>City</div>
+							<input type="text" class="form-control" v-model="temp.city">
+							<div>Province</div>
+							<select class="form-control" v-model="temp.province"
+								v-bind:class="{'is-invalid': !validProvince}">
+								<option v-for="p in province" :value="p.provinceID">{{ p.provinceID }}</option>
+							</select>
+							<div>Postal Code</div>
+							<input type="text" class="form-control" v-model="temp.postalCode"
+								v-bind:class="{'is-invalid': !validPostalCode}">
+							<div>Country</div>
+							<input type="text" class="form-control" v-model="temp.country">
+							<div>Email</div>
+							<input type="text" class="form-control" v-model="temp.courierEmail"
+								v-bind:class="{'is-invalid': !validCourierEmail}">
+							<div>Phone</div>
+							<input type="text" class="form-control" v-model="temp.courierPhone"
+								v-bind:class="{'is-invalid': !validCourierPhone}">
+							<div>Notes</div>
+							<input type="text" class="form-control" v-model="temp.notes">
+							<div v-show="formType !== 'Create'">
+								<div>Active</div>
+								<input type="checkbox" v-model="temp.active">
+							</div>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn" @click="submitForm()"
+								class="btn btn-primary">Submit</button>
+							<button type="button" class="btn" @click="cancelForm()"
+								class="btn btn-secondary">Cancel</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="col-sm-10">
+				<table class="table table-bordered table-sm table-hover">
+					<thead class="thead-dark">
+						<tr>
+							<th class="sticky" v-for="(value, name) in header" @click="sort">
+								{{ name }}</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="courier in filteredCourier">
+							<td class="align-center">{{ courier.courierID }}</td>
+							<td>{{ courier.courierName }}</td>
+							<td>{{ courier.address }}</td>
+							<td>{{ courier.city }}</td>
+							<td>{{ courier.provinceID }}</td>
+							<td>{{ courier.postalCode }}</td>
+							<td>{{ courier.country }}</td>
+							<td>{{ courier.courierEmail }}</td>
+							<td>{{ courier.courierPhone }}</td>
+							<td>{{ courier.notes }}</td>
+							<td class="align-center">
+								<input type="checkbox" :checked="courier.active" disabled />
+							</td>
+							<td>
+								<button type="button" class="btn" v-if="canUpdateCourier"
+									@click="updateCourier(courier.courierID)">Update</button>
+								<button type="button" class="btn" v-if="canDeleteCourier"
+									@click="deleteCourier(courier.courierID)">Mark as
+									Inactive</button>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+		<div id="tableUser" class="collapse container-fluid row" data-parent="#mainForm">
+			<div class="col-sm-2">
+				<div class="sticky">
+					<div>
+						<button type="button" class="btn" @click="readUser()">Get User</button>
+						<button type="button" class="btn" v-if="canCreateUser" @click="createUser()">Create
+							User</button>
+					</div>
+					<h2>Search User ({{ filteredUser.length }})</h2>
+					<div>User ID</div>
+					<input type="text" class="form-control" @input="userID = $event.target.value" />
+					<div>Role</div>
+					<div v-for="r in role">
+						<input type="checkbox" :id="r.roleID" :value="r.roleID" v-model="filterRoleID" />
+						<label :for="r.roleID">{{ r.roleID }}</label>
+					</div>
+					<div>Location</div>
+					<div v-for="l in location">
+						<input type="checkbox" :id="l.locationID" :value="l.description"
+							v-model="filterLocationDescription" />
+						<label for="l.locationID">{{ l.description }}</label>
+					</div>
+					<div>Status</div>
+					<input type="checkbox" :id="1" :value="1" v-model="filterInactive" />
+					<label :for="1">Active</label>
+					<input type="checkbox" :id="0" :value="0" v-model="filterInactive" />
+					<label :for="0">Inactive</label>
+				</div>
+			</div>
+			<div class="modal-custom" v-show="showForm">
+				<div class="modal-dialog-custom modal-dialog-centered-custom">
+					<div class="modal-content-custom">
+						<div class="modal-header">
+							<h2>{{ formType }}</h2>
+						</div>
+						<div class="modal-body">
+							<div>User ID</div>
+							<input type="text" class="form-control" v-model="temp.userID"
+								v-bind:class="{'is-invalid': !validUserID}" />
+							<div v-show="formType === 'Create An User'">
+								<div>Password</div>
+								<input type="password" class="form-control" v-model="temp.password"
+									v-bind:class="{'is-invalid': !validPassword}" />
+								<div>Retype Password to Confirm</div>
+								<input type="password" class="form-control" v-model="confirmPassword"
+									v-bind:class="{'is-invalid': !validConfirmPassword}" />
+							</div>
+							<div>Role</div>
+							<select class="form-control" v-model="temp.roleID"
+								v-bind:class="{'is-invalid': !validRoleID}">
+								<option v-for="r in role" :value="r.roleID">
+									{{ r.roleID }}
+								</option>
+							</select>
+							<div>Location</div>
+							<select class="form-control" v-model="temp.locationID"
+								v-bind:class="{'is-invalid': !validLocationID}">
+								<option v-for="l in location" :value="l.locationID">
+									{{ l.description }}
+								</option>
+							</select>
+							<div>Active</div>
+							<input type="checkbox" v-model="temp.active" />
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn" @click="submitForm()">Submit</button>
+							<button type="button" class="btn" @click="cancelForm()">Cancel</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="col-sm-10">
+				<table class="table table-bordered table-sm table-hover">
+					<thead class="thead-dark">
+						<tr>
+							<th class="sticky" scope="col" v-for="(value, name) in header" @click="sort">{{ name }}</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="(user, index) in filteredUser">
+							<td>{{ user.userID }}</td>
+							<td>{{ user.roleID }}</td>
+							<td>{{ user.description }}</td>
+							<td>
+								<input type="checkbox" :checked="user.active" disabled />
+							</td>
+							<td>
+								<button type="button" class="btn" v-if="canUpdateUser"
+									@click="updateUser(index)">Update</button>
+								<button type="button" class="btn" v-if="canDeleteUser"
+									@click="deleteUser(user.userID)">Mark as Inactive</button>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+	<script type="text/javascript" src="utils.js"></script>
+	<script type="text/javascript" src="main.js"></script>
+	<script type="text/javascript" src="tableOrder.js"></script>
+	<script type="text/javascript" src="tableInventory.js"></script>
+	<script type="text/javascript" src="tableUser.js"></script>
+	<script type="text/javascript" src="tableCourier.js"></script>
+	<script type="text/javascript" src="tableLocation.js"></script>
+	<script type="text/javascript" src="tableItem.js"></script>
+</body>
+
+</html>
