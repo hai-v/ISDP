@@ -122,20 +122,6 @@ BEGIN
     CLOSE curItemID;
 END$$
 
-CREATE PROCEDURE IF NOT EXISTS `createEmergencyOrder` (IN `inLocationID` VARCHAR(4))
-BEGIN
-    DECLARE nextTransactionID INT(11);
-
-    SET nextTransactionID = (SELECT MAX(transactionID) + 1 FROM transaction);
-
-    IF (SELECT COUNT(*) FROM transaction WHERE originalLocationID = inLocationID) = 0 THEN
-        INSERT INTO transaction (transactionID, transactionType, originalLocationID, creationDate, estimatedArrival, transactionStatus, sourceTransactionID, notes) VALUES (nextTransactionID, "ORDER", inLocationID, NOW(), createEstimatedArrival(inLocationID), "NEW", null, null);
-        CALL populateOrder(inLocationID);
-    ELSE    
-        INSERT INTO transaction (transactionID, transactionType, originalLocationID, creationDate, transactionStatus, sourceTransactionID, notes) VALUES (nextTransactionID, "EMERGENCY", inLocationID, NOW(), "NEW", null, null);
-    END IF;    
-END$$
-
 CREATE FUNCTION IF NOT EXISTS `createEstimatedArrival` (inLocationID VARCHAR(4)) RETURNS DATE DETERMINISTIC
 BEGIN
     DECLARE curEstimatedArrival DATE;
@@ -206,8 +192,26 @@ END$$
 
 CREATE PROCEDURE IF NOT EXISTS `modifyQuantity` (IN `oldQuantity` INT(11), IN `newQuantity` INT(11), IN `inTransactionID` INT(11), IN `inItemID` INT(11))
 BEGIN
+    DECLARE existBackorder INT(11);
+    DECLARE locationID VARCHAR(11);
+    DECLARE backorderID INT(11);
+
+    SET existBackorder = (SELECT COUNT(*) FROM transaction WHERE transactionStatus = "SUBMITTED" AND sourceTransactionID = inTransactionID AND transactionType = "BACKORDER");
+    SET locationID = (SELECT originalLocationID FROM transaction WHERE transactionID = inTransactionID);
+    
+    
+    IF (existBackorder = 0) THEN
+        INSERT INTO transaction (transactionType, originalLocationID, creationDate, transactionStatus, sourceTransactionID, notes) VALUES ("BACKORDER", locationID, NOW(), "SUBMITTED", inTransactionID, "");
+    END IF;
+
     UPDATE transactionline SET quantity = newQuantity WHERE transactionID = inTransactionID AND itemID = inItemID;
     UPDATE transaction SET notes = CONCAT(IFNULL(notes, ""), "; MODIFIED_QUANTITY: ITEM ", inItemID, " FROM ", oldQuantity, " TO ", newQuantity) WHERE transactionID = inTransactionID;
+
+    SET backorderID = (SELECT MAX(transactionID) FROM transaction WHERE originalLocationID = locationID);
+    
+    UPDATE transaction SET notes = CONCAT(IFNULL(notes, ""), "; BACKORDER: ", backorderID, ", itemID: ", inItemID, ", quantity: ", oldQuantity - newQuantity, ", ETA: N/A") WHERE transactionID = inTransactionID;
+
+    INSERT INTO transactionline (transactionID, itemID, quantity) VALUES (backorderID, inItemID, oldQuantity - newQuantity);
 END$$
 
 CREATE PROCEDURE IF NOT EXISTS `processItem` (IN `inTransactionID` INT(11), IN `inItemID` INT(11), IN `inQuantity` INT(11))
@@ -222,6 +226,10 @@ BEGIN
 
     IF processedItems = items THEN
         UPDATE transaction SET transactionStatus = "READY" WHERE transactionID = inTransactionID;
+        CALL createDelivery(inTransactionID);
+        IF (SELECT transactionType FROM transaction WHERE transactionID = inTransactionID) = "BACKORDER" THEN
+            UPDATE transaction SET estimatedArrival = createEstimatedArrival((SELECT locationID FROM transaction WHERE transactionID = inTransactionID)) WHERE transactionID = inTransactionID;
+        END IF;
     END IF;
 END$$
 
@@ -244,6 +252,10 @@ BEGIN
     CLOSE cur;
 
     UPDATE transaction SET transactionStatus = "READY" WHERE transactionID = inTransactionID;
+    CALL createDelivery(inTransactionID);
+    IF (SELECT transactionType FROM transaction WHERE transactionID = inTransactionID) = "BACKORDER" THEN
+        UPDATE transaction SET estimatedArrival = createEstimatedArrival((SELECT locationID FROM transaction WHERE transactionID = inTransactionID)) WHERE transactionID = inTransactionID;
+    END IF;
 END$$
 
 CREATE PROCEDURE IF NOT EXISTS `shipItem` (IN `inTransactionID` INT(11), IN `inItemID` INT(11), IN `inQuantity` INT(11))
@@ -252,13 +264,14 @@ BEGIN
     DECLARE items INT(11);
 
     INSERT INTO shippingline (transactionID, itemID, quantity) VALUES (inTransactionID, inItemID, inQuantity);
-    UPDATE inventory SET quantity = quantity - tempQuantity WHERE itemID = tempItemID AND locationID = "WARE";
+    UPDATE inventory SET quantity = quantity - inQuantity WHERE itemID = tempItemID AND locationID = "WARE";
 
     SET shippedItems = (SELECT COUNT(*) FROM shippingline WHERE transactionID = inTransactionID);
     SET items = (SELECT COUNT(*) FROM transactionline WHERE transactionID = inTransactionID);
 
     IF shippedItems = items THEN
         UPDATE transaction SET transactionStatus = "IN TRANSIT" WHERE transactionID = inTransactionID;
+        
     END IF;
 END$$
 
@@ -290,7 +303,7 @@ BEGIN
     DECLARE items INT(11);
 
     INSERT INTO receivingline (transactionID, itemID, quantity) VALUES (inTransactionID, inItemID, inQuantity);
-    UPDATE inventory SET quantity = quantity + tempQuantity WHERE itemID = tempItemID AND locationID = (SELECT originalLocationID FROM transaction WHERE transactionID = inTransactionID);
+    UPDATE inventory SET quantity = quantity + inQuantity WHERE itemID = tempItemID AND locationID = (SELECT originalLocationID FROM transaction WHERE transactionID = inTransactionID);
 
     SET receivedItems = (SELECT COUNT(*) FROM receivingline WHERE transactionID = inTransactionID);
     SET items = (SELECT COUNT(*) FROM transactionline WHERE transactionID = inTransactionID);
@@ -320,6 +333,116 @@ BEGIN
     CLOSE cur;
 
     UPDATE transaction SET transactionStatus = "DELIVERED" WHERE transactionID = inTransactionID;
+END$$
+
+CREATE PROCEDURE IF NOT EXISTS `createReturnOrder` (IN `inTransactionType` VARCHAR(50), IN `inOriginalLocationID` VARCHAR(4))
+BEGIN
+    DECLARE exist INT(11);
+    
+    SET exist = (SELECT COUNT(*) FROM transaction WHERE transactionType = inTransactionType AND originalLocationID = inOriginalLocationID AND transactionStatus = "NEW");
+
+    IF exist < 1 THEN
+        INSERT INTO transaction (transactionType, originalLocationID, creationDate, transactionStatus, notes) VALUES (inTransactionType, inOriginalLocationID, NOW(), "NEW", "");
+    END IF;
+END$$
+
+CREATE PROCEDURE IF NOT EXISTS `submitLoss` (IN `inTransactionID` INT(11), IN `inNotes` VARCHAR(2000))
+BEGIN
+    DECLARE tempItemID INT(11);
+    DECLARE tempQuantity INT(11);
+    DECLARE curLocationID VARCHAR(11);
+    DECLARE finished INT DEFAULT 0;
+    DECLARE cur CURSOR FOR SELECT itemID, quantity FROM transactionline WHERE transactionID = inTransactionID;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
+    
+    UPDATE transaction SET transactionStatus = 'COMPLETE', notes = inNotes WHERE transactionID = inTransactionID;
+    SET curLocationID = (SELECT originalLocationID FROM transaction WHERE transactionID = inTransactionID);
+
+    OPEN cur;
+        getItemID: LOOP
+            FETCH cur INTO tempItemID, tempQuantity;
+            IF finished = 1 THEN
+                LEAVE getItemID;
+            END IF;
+            UPDATE inventory SET quantity = (quantity - tempQuantity) WHERE locationID = curLocationID;
+        END LOOP getItemID;
+    CLOSE cur;
+END$$
+
+CREATE PROCEDURE IF NOT EXISTS `submitReturn` (IN `inTransactionID` INT(11))
+BEGIN
+    DECLARE tempItemID INT(11);
+    DECLARE tempQuantity INT(11);
+    DECLARE curLocationID VARCHAR(11);
+    DECLARE finished INT DEFAULT 0;
+    DECLARE cur CURSOR FOR SELECT itemID, quantity FROM transactionline WHERE transactionID = inTransactionID;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
+    
+    UPDATE transaction SET transactionStatus = 'SUBMITTED' WHERE transactionID = inTransactionID;
+    SET curLocationID = (SELECT originalLocationID FROM transaction WHERE transactionID = inTransactionID);
+
+    OPEN cur;
+        getItemID: LOOP
+            FETCH cur INTO tempItemID, tempQuantity;
+            IF finished = 1 THEN
+                LEAVE getItemID;
+            END IF;
+            UPDATE inventory SET quantity = (quantity - tempQuantity) WHERE locationID = curLocationID;
+        END LOOP getItemID;
+    CLOSE cur;
+
+    CALL createDelivery(inTransactionID);
+END$$
+
+CREATE PROCEDURE IF NOT EXISTS `createDelivery` (IN `inTransactionID` INT (11))
+BEGIN
+    DECLARE exist INT DEFAULT 0;
+    DECLARE curLocationID VARCHAR(11);
+    DECLARE curRouteID INT(11);
+    DECLARE curDeliveryID INT(11);
+
+    SET curLocationID = (SELECT originalLocationID FROM transaction WHERE transactionID = inTransactionID);
+    SET exist = (SELECT COUNT(*) FROM DELIVERY WHERE YEARWEEK(dateTime) = YEARWEEK(CURDATE()) AND deliveryID IN (SELECT deliveryID FROM deliverytransaction WHERE routeID IN (SELECT routeID FROM route WHERE startLocationID = curLocationID OR destinationLocationID = curLocationID)));
+
+    IF exist = 0 THEN
+        INSERT INTO delivery (dateTime, courierID) VALUES (NOW(), 1);
+    END IF;
+
+    SET curRouteID = (SELECT routeID FROM route WHERE startLocationID = curLocationID);
+    SET curDeliveryID = (SELECT MAX(deliveryID) FROM DELIVERY WHERE YEARWEEK(dateTime) = YEARWEEK(CURDATE()) AND deliveryID IN (SELECT deliveryID FROM deliverytransaction WHERE routeID IN (SELECT routeID FROM route WHERE startLocationID = curLocationID OR destinationLocationID = curLocationID)));
+    REPLACE deliverytransaction (deliveryID, transactionID, routeID) VALUES (curDeliveryID, inTransactionID, curRouteID);
+
+    CALL updateVehicle(curDeliveryID);
+END$$
+
+CREATE PROCEDURE IF NOT EXISTS `updateVehicle` (IN `inDeliveryID` INT(11))
+BEGIN   
+    DECLARE tempItemID INT(11);
+    DECLARE tempQuantity INT(11);
+    DECLARE curWeight INT DEFAULT 0;
+    DECLARE finished INT DEFAULT 0;
+    DECLARE cur CURSOR FOR SELECT itemID, quantity FROM transactionline WHERE transactionID IN (SELECT transactionID FROM deliverytransaction WHERE deliveryID = inDeliveryID);
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
+
+    OPEN cur;
+        getCur: LOOP
+            FETCH cur INTO tempItemID, tempQuantity;
+            IF finished = 1 THEN
+                LEAVE getCur;
+            END IF;
+            SET curWeight = curWeight + tempQuantity * (SELECT weight FROM item WHERE itemID = tempItemID);
+        END LOOP getCur;
+    CLOSE cur;
+
+    IF curWeight <= 852.75 THEN
+        UPDATE delivery SET vehicleID = "VAN" WHERE deliveryID = inDeliveryID;
+    ELSEIF curWeight <= 1292.74 THEN
+        UPDATE delivery SET vehicleID = "LIGHT" WHERE deliveryID = inDeliveryID;
+    ELSEIF curWeight <= 4086.87 THEN
+        UPDATE delivery SET vehicleID = "MEDIUM" WHERE deliveryID = inDeliveryID;
+    ELSE
+        UPDATE delivery SET vehicleID = "HEAVY" WHERE deliveryID = inDeliveryID;
+    END IF;
 END$$
 
 DELIMITER ;

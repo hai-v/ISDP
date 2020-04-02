@@ -28,6 +28,7 @@ let root = new Vue({
 		canReadItem: false,
 		canReadCourier: false,
 		canReadOrder: false,
+		canReadDelivery: false,
 		curUser: []
 	}
 });
@@ -66,6 +67,7 @@ function readPermission(roleID) {
 				checkPermission(["CRUD", "READ COURIER"]);
 			root.canReadLocation =
 				checkPermission(["CRUD", "READ LOCATION"]);
+			root.canReadDelivery = ["DELIVERY DRIVER", "STORE MANAGER", "WAREHOUSE MANAGER", "WAREHOUSE WORKER"].includes(curUser.roleID.toUpperCase());
 			if (root.canReadInventory) {
 				if (curUser.roleID !== "DB ADMIN" && curUser.roleID !== "Upper Management") {
 					tableInventory.filterLocationDescription = [curUser.description];
@@ -78,11 +80,16 @@ function readPermission(roleID) {
 						tableOrder.filterOriginalLocationID = [curUser.locationID];
 					};
 					tableOrder.filterTransactionType = ["ORDER", "EMERGENCY", "BACKORDER"];
-					tableOrder.filterTransactionStatus = ["NEW", "SUBMITTED", "PROCESSING", "READY", "IN TRANSIT", "DELIVERED"];
+					tableOrder.filterTransactionStatus = ["NEW", "SUBMITTED", "PROCESSING", "READY", "IN TRANSIT"];
 				};
 				tableOrder.canSubmitAllOrders = checkPermission(["CRUD", "UPDATE ALL ORDER"]);
 				tableOrder.canReadBackorderItems = checkPermission(["CRUD", "UPDATE ALL ORDER"]);
-				tableOrder.canCreateEmergencyOrder = checkPermission(["CRUD"]) || curUser.roleID === "Store Manager";
+				tableOrder.canCreateStoreOrder = ["Store Manager", "Store Worker"].includes(curUser.roleID);
+				tableOrder.canCreateLossOrder = ["Store Manager", "Store Worker"].includes(curUser.roleID);
+				tableOrder.canCreateReturnOrder = ["Store Manager", "Store Worker"].includes(curUser.roleID);
+				
+				tableOrder.canCreateDamageOrder = ["Store Manager", "Store Worker"].includes(curUser.roleID);
+				tableOrder.canCreateEmergencyOrder = curUser.roleID === "Store Manager";
 			};
 			tableItem.canCreateItem = checkPermission(["CRUD", "CREATE ITEM"]);
 			tableItem.canUpdateItem = checkPermission(["CRUD", "UPDATE ITEM"]);

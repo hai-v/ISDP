@@ -1,3 +1,5 @@
+let signaturePad;
+
 let tableOrder = new Vue({
     el: "#tableOrder",
     data: {
@@ -73,12 +75,18 @@ let tableOrder = new Vue({
         canSubmitAllOrders: false,
         canReadBackorderItems: false,
         canCreateEmergencyOrder: false,
+        canCreateStoreOrder: false,
+        canCreateReturnOrder: false,
+        canCreateLossOrder: false,
+        canCreateDamageOrder: false,
         //FORM
         showFormOrder: false,
         showFormInventory: false,
         showFormBackorder: false,
         showFormQuantity: false,
         showFormEmergencyAll: false,
+        showFormLoss: false,
+        showFormSignature: false,
         //BAND-AID FIX
         emergencyLocationID: "STJN",
         temp: {},
@@ -86,6 +94,8 @@ let tableOrder = new Vue({
         paginationIndexLast: 1,
         itemsShown: 10,
         action: "",
+        notes: "",
+
     },
     computed: {
         filteredOrders() {
@@ -163,17 +173,17 @@ let tableOrder = new Vue({
         },
         canProcessItem: function (order) {
             if (order.transactionStatus !== undefined) {
-                return order.transactionStatus.toUpperCase() === "PROCESSING" && ["WAREHOUSE WORKER", "DB ADMIN", "WAREHOUSE FOREMAN"].includes(curUser.roleID.toUpperCase()) && tableOrder.action === "PROCESS";
+                return order.transactionStatus.toUpperCase() === "PROCESSING" && ["WAREHOUSE WORKER", "DB ADMIN", "WAREHOUSE MANAGER"].includes(curUser.roleID.toUpperCase()) && tableOrder.action === "PROCESS";
             };
         },
         canShipItem: function (order) {
             if (order.transactionStatus !== undefined) {
-                return order.transactionStatus.toUpperCase() === "READY" && (checkPermission(["CRUD", "UPDATE ALL ORDER"]) || curUser.roleID.toUpperCase() === "WAREHOUSE WORKER") && tableOrder.action === "SHIP";
+                return (order.transactionStatus.toUpperCase() === "READY" && ["ADMIN", "WAREHOUSE WORKER", "WAREHOUSE MANAGER"].includes(curUser.roleID.toUpperCase())) || (order.transactionStatus.toUpperCase() === "SUMITTED" && ["STORE MANAGER", "STORE WORKER"].includes(curUser.roleID)); 
             };
         },
         canReceiveItem: function (order) {
             if (order.transactionStatus !== undefined) {
-                return order.transactionStatus.toUpperCase() === "IN TRANSIT" && (checkPermission(["CRUD", "UPDATE ALL ORDER"]) || curUser.roleID.toUpperCase() === "STORE MANAGER" || curUser.roleID.toUpperCase() === "STORE WORKER") && tableOrder.action === "SHIP";
+                return order.transactionStatus.toUpperCase() === "IN TRANSIT" && (["ADMIN", "STORE MANAGER", "STORE WORKER"].includes(curUser.roleID.toUpperCase()) || (["ADMIN", "WAREHOUSE WORKER", "WAREHOUSE FOREMAN"].includes(curUser.roleID.toUpperCase()) && ["RETURN", "DAMAGE"].includes(order.transactionType)));
             };
         },
         canSubmitOrder: function (order) {
@@ -184,18 +194,74 @@ let tableOrder = new Vue({
         },
         canProcessOrder: function (order) {
             if (order.transactionStatus !== undefined) {
-                return ["SUBMITTED", "PROCESSING"].includes(order.transactionStatus.toUpperCase()) && ["WAREHOUSE WORKER", "DB ADMIN", "WAREHOUSE FOREMAN"].includes(curUser.roleID.toUpperCase());
+                return ["SUBMITTED", "PROCESSING"].includes(order.transactionStatus.toUpperCase()) && ["WAREHOUSE WORKER", "DB ADMIN", "WAREHOUSE MANAGER"].includes(curUser.roleID.toUpperCase());
             };
         },
-        canReadyOrder: function (order) {
+        canShipOrder: function (order) {
             if (order.transactionStatus !== undefined) {
-                return order.transactionStatus.toUpperCase() === "PROCESSING" && checkPermission(["CRUD", "UPDATE ALL ORDER"]);
+                return ["READY"].includes(order.transactionStatus.toUpperCase()) && ["DB ADMIN", "WAREHOUSE MANAGER"].includes(curUser.roleID.toUpperCase());
+            };
+        },
+        canReceiveOrder: function (order) {
+            if (order.transactionStatus !== undefined) {
+                return ["IN TRANSIT"].includes(order.transactionStatus.toUpperCase()) && ["DB ADMIN", "STORE MANAGER", "STORE WORKER"].includes(curUser.roleID.toUpperCase())
             };
         },
         canChangeOrderQuantity: function (order) {
             if (order !== undefined) {
                 return checkPermission(["CRUD"]) || (checkPermission(["UPDATE ORDER"]) && (order.originalLocationID === curUser.locationID)) && order.transactionStatus === "NEW";
             };
+        },
+        canChangeOrderStatus: function (order) {
+            if (order !== undefined) {
+                return ["DB ADMIN", "WAREHOUSE MANAGER"].includes(curUser.roleID.toUpperCase()) && order.transactionStatus === "SUBMITTED";
+            };
+        },
+        canDeleteOrder: function (order) {
+            if (order !== undefined) {
+                return ["DB ADMIN", "STORE MANAGER", "WAREHOUSE MANAGER"].includes(curUser.roleID.toUpperCase()) && order.transactionStatus === "NEW" && ["EMERGENCY", "RETURN", "LOSS", "DAMAGE"].includes(order.transactionType);
+            };
+        },
+        canShowNotes: function (order) {
+            if (order !== undefined) {
+                return ["LOSS"].includes(order.transactionType);
+            };
+        },
+        canChangeNotes: function (order) {
+            if (order !== undefined) {
+                return ["NEW"].includes(order.transactionStatus);
+            };
+        },
+        canSubmitLoss: function (order) {
+            if (order !== undefined) {
+                return ["NEW"].includes(order.transactionStatus) && ["LOSS"].includes(order.transactionType) && ["STORE MANAGER"].includes(curUser.roleID.toUpperCase()) && [order.originalLocationID].includes(curUser.locationID);
+            };
+        },
+        canSubmitReturn: function (order) {
+            if (order !== undefined) {
+                return ["RETURN", "DAMAGE"].includes(order.transactionType) && ["NEW"].includes(order.transactionStatus) && ["STORE MANAGER"].includes(curUser.roleID.toUpperCase()) && [order.originalLocationID].includes(curUser.locationID);
+            };
+        },
+        canProcessReturn: function(order) {
+            if (order !== undefined) {
+                return ["RETURN", "DAMAGE"].includes(order.transactionType) && ["SUMITTED"].includes(order.transactionStatus.toUpperCase()) && ["WAREHOUSE MANAGER", "WAREHOUSE WORKER"].includes(curUser.roleID.toUpperCase());
+            };
+        },
+        changeOrderStatus: function (order) {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "call changeOrderStatus(?)",
+                        types: "i",
+                        params: [order.transactionID],
+                    }
+                })
+                .then(function (response) {
+                    console.log(response.data);
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
         },
         submitOrder: function (order) {
             axios
@@ -226,6 +292,7 @@ let tableOrder = new Vue({
                     } else {
                         alert("The store orders have already been submitted");
                     };
+                    console.log(response);
                     tableOrder.readTransaction();
                 })
                 .catch(function (error) {
@@ -278,6 +345,7 @@ let tableOrder = new Vue({
             tableOrder.order[0] = [];
             tableOrder.order[1] = [];
             tableOrder.action = "";
+            console.log("a");
         },
         updateOrderQuantity: function (transactionID, item) {
             if (checkInteger(item.caseQuantity)) {
@@ -358,32 +426,31 @@ let tableOrder = new Vue({
                         }
                     })
                     .then(function (response) {
-                        let temp = order;
                         tableOrder.readTransaction();
-                        tableOrder.processOrder(order);
+                    })
+                    .catch(function (error) {
+                        alert(error);
+                    });
+            } else {
+                axios
+                    .get("/BullsEye/api/mysqli.php", {
+                        params: {
+                            stmt: "select tl.itemID, i.itemName, i.description, i.categoryName, i.costPrice, i.retailPrice, s.companyName, i.caseSize, CEILING(tl.quantity / i.caseSize) as 'caseQuantity', tl.quantity from transactionline tl, item i, supplier s WHERE tl.itemID = i.itemID and i.supplierID = s.supplierID AND tl.transactionID = ? AND (?, tl.itemID) NOT IN (SELECT transactionID, itemID FROM processingline)",
+                            types: "ii",
+                            values: [order.transactionID, order.transactionID]
+                        }
+                    })
+                    .then(function (response) {
+                        console.log(response);
+                        tableOrder.order[1] = response.data;
+                        tableOrder.order[0] = order;
+                        tableOrder.showFormOrder = true;
+                        tableOrder.action = "PROCESS";
                     })
                     .catch(function (error) {
                         alert(error);
                     });
             };
-            axios
-                .get("/BullsEye/api/mysqli.php", {
-                    params: {
-                        stmt: "select tl.itemID, i.itemName, i.description, i.categoryName, i.costPrice, i.retailPrice, s.companyName, i.caseSize, CEILING(tl.quantity / i.caseSize) as 'caseQuantity', tl.quantity from transactionline tl, item i, supplier s WHERE tl.itemID = i.itemID and i.supplierID = s.supplierID AND tl.transactionID = ? AND (?, tl.itemID) NOT IN (SELECT transactionID, itemID FROM processingline);",
-                        types: "ii",
-                        values: [order.transactionID, order.transactionID]
-                    }
-                })
-                .then(function (response) {
-                    console.log(response);
-                    tableOrder.order[1] = response.data;
-                    tableOrder.order[0] = order;
-                    tableOrder.showFormOrder = true;
-                    tableOrder.action = "PROCESS";
-                })
-                .catch(function (error) {
-                    alert(error);
-                });
         },
         processItem: function (order, item) {
             axios
@@ -407,12 +474,13 @@ let tableOrder = new Vue({
             axios
                 .get("/BullsEye/api/mysqli.php", {
                     params: {
-                        stmt: "UPDATE transaction SET transactionStatus = 'PROCESSING' WHERE transactionID = ?",
+                        stmt: "CALL processAllItems(?)",
                         types: "i",
                         values: [order.transactionID]
                     }
                 })
                 .then(function (response) {
+                    console.log(response);
                     tableOrder.showFormOrder = false;
                     tableOrder.readTransaction();
                 })
@@ -420,11 +488,120 @@ let tableOrder = new Vue({
                     alert(error);
                 });
         },
-        readyOrder: function (order) {
+        shipOrder: function (order) {
             axios
                 .get("/BullsEye/api/mysqli.php", {
                     params: {
-                        stmt: "UPDATE transaction SET transactionStatus = 'READY' WHERE transactionID = ?",
+                        stmt: "select tl.itemID, i.itemName, i.description, i.categoryName, i.costPrice, i.retailPrice, s.companyName, i.caseSize, CEILING(tl.quantity / i.caseSize) as 'caseQuantity', tl.quantity from transactionline tl, item i, supplier s WHERE tl.itemID = i.itemID and i.supplierID = s.supplierID AND tl.transactionID = ? AND (?, tl.itemID) NOT IN (SELECT transactionID, itemID FROM shippingline);",
+                        types: "ii",
+                        values: [order.transactionID, order.transactionID]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.order[1] = response.data;
+                    tableOrder.order[0] = order;
+                    tableOrder.showFormOrder = true;
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        shipItem: function (order, item) {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL shipItem(?, ?, ?)",
+                        types: "iii",
+                        values: [order.transactionID, item.itemID, item.caseSize * item.caseQuantity]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.showFormOrder = false;
+                    tableOrder.readTransaction();
+                    tableOrder.shipOrder(order);
+                    if (tableOrder.order[1].length === 0) {
+                        tableOrder.showFormSignature = true;
+                        signaturePad = new SignaturePad(document.getElementById('signature-pad'), {
+                            backgroundColor: 'rgba(255, 255, 255, 0)',
+                            penColor: 'rgb(0, 0, 0)'
+                        });
+                    };
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        shipAllItems: function (order) {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL shipAllItems(?)",
+                        types: "i",
+                        values: [order.transactionID]
+                    }
+                })
+                .then(function (response) {
+                    console.log(response);
+                    tableOrder.showFormOrder = false;
+                    tableOrder.readTransaction();
+                    tableOrder.showFormSignature = true;
+                    signaturePad = new SignaturePad(document.getElementById('signature-pad'), {
+                        backgroundColor: 'rgba(255, 255, 255, 0)',
+                        penColor: 'rgb(0, 0, 0)'
+                    });
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        receiveOrder: function (order) {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "select tl.itemID, i.itemName, i.description, i.categoryName, i.costPrice, i.retailPrice, s.companyName, i.caseSize, CEILING(tl.quantity / i.caseSize) as 'caseQuantity', tl.quantity from transactionline tl, item i, supplier s WHERE tl.itemID = i.itemID and i.supplierID = s.supplierID AND tl.transactionID = ? AND (?, tl.itemID) NOT IN (SELECT transactionID, itemID FROM receivingline);",
+                        types: "ii",
+                        values: [order.transactionID, order.transactionID]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.order[1] = response.data;
+                    tableOrder.order[0] = order;
+                    tableOrder.showFormOrder = true;
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        receiveItem: function (order, item) {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL receiveItem(?, ?, ?)",
+                        types: "iii",
+                        values: [order.transactionID, item.itemID, item.caseSize * item.caseQuantity]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.showFormOrder = false;
+                    tableOrder.readTransaction();
+                    tableOrder.receiveOrder(order);
+                    if (tableOrder.order[1].length === 0) {
+                        tableOrder.showFormSignature = true;
+                        signaturePad = new SignaturePad(document.getElementById('signature-pad'), {
+                            backgroundColor: 'rgba(255, 255, 255, 0)',
+                            penColor: 'rgb(0, 0, 0)'
+                        });
+                    };
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        receiveAllItems: function (order) {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL receiveAllItems(?)",
                         types: "i",
                         values: [order.transactionID]
                     }
@@ -432,6 +609,11 @@ let tableOrder = new Vue({
                 .then(function (response) {
                     tableOrder.showFormOrder = false;
                     tableOrder.readTransaction();
+                    tableOrder.showFormSignature = true;
+                    signaturePad = new SignaturePad(document.getElementById('signature-pad'), {
+                        backgroundColor: 'rgba(255, 255, 255, 0)',
+                        penColor: 'rgb(0, 0, 0)'
+                    });
                 })
                 .catch(function (error) {
                     alert(error);
@@ -456,24 +638,20 @@ let tableOrder = new Vue({
                 });
         },
         createEmergencyOrder: function () {
-            if (curUser.roleID.toUpperCase() !== "DB ADMIN") {
-                axios
-                    .get("/BullsEye/api/mysqli.php", {
-                        params: {
-                            stmt: "CALL createEmergencyOrder(?)",
-                            types: "s",
-                            values: [curUser.locationID]
-                        }
-                    })
-                    .then(function (response) {
-                        tableOrder.readTransaction();
-                    })
-                    .catch(function (error) {
-                        alert(error);
-                    });
-            } else {
-                tableOrder.showFormEmergencyAll = true;
-            }
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL createEmergencyOrder(?)",
+                        types: "s",
+                        values: [curUser.locationID]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.readTransaction();
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
         },
         submitFormEmergencyAll: function () {
             axios
@@ -499,7 +677,7 @@ let tableOrder = new Vue({
             axios
                 .get("/BullsEye/api/mysqli.php", {
                     params: {
-                        stmt: "select i.itemID, i.itemName, i.description, inv.quantity, SUM(tl.quantity) as 'orderQuantity' FROM item i, inventory inv, transactionline tl WHERE i.itemID = inv.itemID AND tl.itemID = i.itemID AND inv.locationID = 'WARE' AND tl.transactionID IN (SELECT transactionID FROM transaction WHERE transactionstatus = 'SUBMITTED') GROUP BY i.itemID HAVING sum(tl.quantity) > inv.quantity",
+                        stmt: "select i.itemID, i.itemName, i.description, inv.quantity, SUM(tl.quantity) as 'orderQuantity' FROM item i, inventory inv, transactionline tl WHERE i.itemID = inv.itemID AND tl.itemID = i.itemID AND inv.locationID = 'WARE' AND tl.transactionID IN (SELECT transactionID FROM transaction WHERE transactionstatus = 'SUBMITTED' AND transactionType = 'ORDER') GROUP BY i.itemID HAVING sum(tl.quantity) > inv.quantity",
                         types: null,
                         values: [null]
                     }
@@ -536,6 +714,7 @@ let tableOrder = new Vue({
         },
         cancelFormQuantity: function () {
             tableOrder.showFormQuantity = false;
+            tableOrder.readTransaction();
         },
         autoModifyQuantity: function () {
             let sum = 0;
@@ -554,25 +733,144 @@ let tableOrder = new Vue({
             tableOrder.showFormQuantity = true;
         },
         submitFormQuantity: function () {
-            for (let i = 0; i < tableOrder.backorderTxn[1].length; i++) {
-                axios
-                    .get("/BullsEye/api/mysqli.php", {
-                        params: {
-                            stmt: "CALL modifyQuantity(?, ?, ?, ?)",
-                            types: "iiii",
-                            values: [tableOrder.backorderTxn[1][i].quantity, tableOrder.backorderTxn[1][i].newQuantity, tableOrder.backorderTxn[1][i].transactionID, tableOrder.backorderTxn[2]]
-                        }
-                    })
-                    .then(function (response) {
-
-                    })
-                    .catch(function (error) {
-                        alert(error);
-                    });
+            let txns = tableOrder.backorderTxn[1];
+            let sum = 0;
+            for (let i = 0; i < txns.length; i++) {
+                sum += txns[i].newQuantity;
             };
-            tableOrder.showFormQuantity = false;
-            tableOrder.showFormBackorder = false;
-            tableOrder.readBackorder();
+            if (sum !== tableOrder.backorderTxn[0]) {
+                alert("The sum of allocated quantities must be the same as the amount in warehouse");
+            } else {
+                for (let i = 0; i < tableOrder.backorderTxn[1].length; i++) {
+                    axios
+                        .get("/BullsEye/api/mysqli.php", {
+                            params: {
+                                stmt: "CALL modifyQuantity(?, ?, ?, ?)",
+                                types: "iiii",
+                                values: [tableOrder.backorderTxn[1][i].quantity, tableOrder.backorderTxn[1][i].newQuantity, tableOrder.backorderTxn[1][i].transactionID, tableOrder.backorderTxn[2]]
+                            }
+                        })
+                        .then(function (response) {
+                            tableOrder.showFormBackorder = false;
+                            tableOrder.showFormQuantity = false;
+                            tableOrder.readTransaction();
+                        })
+                        .catch(function (error) {
+                            alert(error);
+                        });
+                };
+            };
+        },
+        createLossOrder: function () {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL createReturnOrder(?, ?)",
+                        types: "ss",
+                        values: ["LOSS", curUser.locationID]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.readTransaction();
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        createReturnOrder: function () {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL createReturnOrder(?, ?)",
+                        types: "ss",
+                        values: ["RETURN", curUser.locationID]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.readTransaction();
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        createDamageOrder: function () {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL createReturnOrder(?, ?)",
+                        types: "ss",
+                        values: ["DAMAGE", curUser.locationID]
+                    }
+                })
+                .then(function (response) {})
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        submitFormSignature: function () {
+            if (signaturePad.isEmpty()) {
+                alert("Signature needed");
+            } else {
+                tableOrder.showFormSignature = false;
+                signaturePad.clear();
+            };
+        },
+        clearFormSignature: function () {
+            signaturePad.clear();
+        },
+        submitLoss: function (order) {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL submitLoss(?, ?)",
+                        types: "is",
+                        values: [order.transactionID, tableOrder.notes]
+                    }
+                })
+                .then(function (response) {
+                    console.log(response);
+                    console.log(tableOrder.notes);
+                    tableOrder.showFormOrder = false;
+                    tableOrder.notes = "";
+                    tableOrder.readTransaction();
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        submitReturn: function (order) {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL submitReturn(?)",
+                        types: "i",
+                        values: [order.transactionID]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.showFormOrder = false;
+                    tableOrder.readTransaction();
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        processReturn: function(order) {
+            axios
+            .get("/BullsEye/api/mysqli.php", {
+                params: {
+                    stmt: "UPDATE transaction SET status = 'COMPLETE' WHERE transactionID = ?",
+                    types: "is",
+                    values: [order.transactionID]
+                }
+            })
+            .then(function (response) {
+                tableOrder.showFormOrder = false;
+                tableOrder.readTransaction();
+            })
+            .catch(function (error) {
+                alert(error);
+            });   
         },
     },
 });
