@@ -445,4 +445,54 @@ BEGIN
     END IF;
 END$$
 
+CREATE PROCEDURE IF NOT EXISTS `completePurchaseOrder` (IN `inTransactionID` INT(11))
+BEGIN 
+    DECLARE curLocationID VARCHAR(4);
+    DECLARE tempItemID INT(11);
+    DECLARE tempQuantity INT(11);
+    DECLARE finished INT DEFAULT 0;
+    DECLARE cur CURSOR FOR SELECT itemID, quantity FROM transactionline WHERE transactionID = inTransactionID;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
+
+    SET curLocationID = (SELECT originalLocationID FROM transaction WHERE transactionID = inTransactionID);
+
+    UPDATE transaction SET transactionStatus = 'COMPLETE' WHERE transactionID = inTransactionID;
+
+    OPEN cur;
+        getCur: LOOP
+            FETCH cur INTO tempItemID, tempQuantity;
+            IF finished = 1 THEN
+                LEAVE getCur;
+            END IF;
+            UPDATE inventory SET quantity = quantity - tempQuantity WHERE itemID = tempItemID AND locationID = curLocationID;
+        END LOOP getCur;
+    CLOSE cur;
+    CALL checkBackorder();
+END$$
+
+CREATE PROCEDURE IF NOT EXISTS `completeReturnOrder` (IN `inTransactionID` INT(11))
+BEGIN 
+    DECLARE curLocationID VARCHAR(4);
+    DECLARE tempItemID INT(11);
+    DECLARE tempQuantity INT(11);
+    DECLARE finished INT DEFAULT 0;
+    DECLARE cur CURSOR FOR SELECT itemID, quantity FROM transactionline WHERE transactionID = inTransactionID;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
+
+    SET curLocationID = (SELECT originalLocationID FROM transaction WHERE transactionID = inTransactionID);
+
+    UPDATE transaction SET transactionStatus = 'COMPLETE' WHERE transactionID = inTransactionID;
+
+    OPEN cur;
+        getCur: LOOP
+            FETCH cur INTO tempItemID, tempQuantity;
+            IF finished = 1 THEN
+                LEAVE getCur;
+            END IF;
+            UPDATE inventory SET quantity = quantity + tempQuantity WHERE itemID = tempItemID AND locationID = curLocationID;
+        END LOOP getCur;
+    CLOSE cur;
+    CALL checkBackorder();
+END$$
+
 DELIMITER ;

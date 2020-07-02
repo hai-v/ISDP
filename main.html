@@ -62,6 +62,12 @@
 						Damage Order</button>
 					<button type="button" class="btn" v-if="canCreateStoreOrder" @click="createStoreOrder()">Create
 						Store Order</button>
+					<button type="button" class="btn" v-if="canCreateStorePurchase" @click="createStorePurchase()">
+						Create Store Purchase
+					</button>
+					<button type="button" class="btn" v-if="canCreateStoreReturn" @click="createStoreReturn()">
+						Create Store Return
+					</button>
 					<button type="button" class="btn" @click="sendEmail()">Send Email</button>
 					<button type="button" class="btn" @click="createEmergencyOrder()"
 						v-if="canCreateEmergencyOrder">Create Emergency Order</button>
@@ -118,7 +124,9 @@
 							<td>{{ o.sourceTransactionID }}</td>
 							<td class="overflow_notes">{{ o.notes }}</td>
 							<td>
-								<button type="button" class="btn" @click="readOrder(o)">View Order</button>
+								<button type="button" class="btn" @click="readOrder(o)" v-if="canReadOrder(o)">View Order</button>
+								<button type="button" class="btn" @click="readPurchase(o)" v-if="canReadPurchase(o)">View Purchase</button>
+								<button type="button" class="btn" @click="readPurchase(o)" v-if="canReadReturn(o)">View Return</button>
 								<button type="button" class="btn" @click="processOrder(o)"
 									v-if="canProcessOrder(o)">Process
 									Order</button>
@@ -367,6 +375,50 @@
 						<div class="modal-footer">
 							<button type="button" class="btn" @click="submitFormSignature()">Submit</button>
 							<button type="button" class="btn" @click="clearFormSignature()">Clear</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="modal-custom" v-show="showFormPurchase">
+				<div class="modal-dialog-custom modal-dialog-centered-custom">
+					<div class="modal-content-custom">
+						<div class="modal-header">
+							<h2>View Order</h2>
+						</div>
+						<div class="modal-body">
+							<table class="table table-bordered table-sm table-hover">
+								<thead class="thead-dark">
+									<tr>
+										<th scope="col" v-for="(value, name) in headerPurchase">
+											{{ name }}
+										</th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr v-for="(i, index) in order[1]">
+										<td>{{ i.itemID }}</td>
+										<td>{{ i.itemName }}</td>
+										<td>{{ i.description }}</td>
+										<td>{{ i.categoryName }}</td>
+										<td>{{ i.companyName }}</td>
+										<td><input name="integer" type="number" class="form-control align-right"
+												v-model.number="i.quantity"
+												:disabled="!canChangeOrderQuantity(order[0])"
+												:change="updatePurchaseQuantity(order[0].transactionID, i)"></td>
+										<td>
+											<button type="button" class="btn" v-if="canDeleteItem(order[0])"
+												@click="deleteItem(order[0], i)">Remove</button>
+										</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn" @click="createItem(order[0])"
+							v-if="canCreateItem(order[0])">Add Item</button>
+							<button type="button" class="btn" @click="completeFormPurchase(order[0])" v-if="canCompletePurchase(order[0])">Complete Purchase</button>
+							<button type="button" class="btn" @click="completeFormReturn(order[0])" v-if="canCompleteReturn(order[0])">Complete Return</button>
+							<button type="button" class="btn" @click="cancelFormPurchase()">Close</button>
 						</div>
 					</div>
 				</div>

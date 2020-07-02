@@ -87,7 +87,7 @@ function readPermission(roleID) {
 				tableOrder.canCreateStoreOrder = ["Store Manager", "Store Worker"].includes(curUser.roleID);
 				tableOrder.canCreateLossOrder = ["Store Manager", "Store Worker"].includes(curUser.roleID);
 				tableOrder.canCreateReturnOrder = ["Store Manager", "Store Worker"].includes(curUser.roleID);
-				
+				tableOrder.canCreateStorePurchase = ["STORE MANAGER", "STORE WORKER"].includes(curUser.roleID.toUpperCase());
 				tableOrder.canCreateDamageOrder = ["Store Manager", "Store Worker"].includes(curUser.roleID);
 				tableOrder.canCreateEmergencyOrder = curUser.roleID === "Store Manager";
 			};

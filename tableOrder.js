@@ -58,6 +58,15 @@ let tableOrder = new Vue({
             "Case Size": "caseSize",
             "": null,
         },
+        headerPurchase: {
+            "Item ID": "itemID",
+            "Name": "itemName",
+            "Description": "description",
+            "Category Name": "categoryName",
+            "Supplier": "companyName",
+            "Quantity": "quantity",
+            "": null,
+        },
         headerItems: {
             "Item ID": "itemID",
             "Name": "itemName",
@@ -79,6 +88,7 @@ let tableOrder = new Vue({
         canCreateReturnOrder: false,
         canCreateLossOrder: false,
         canCreateDamageOrder: false,
+        canCreateStorePurchase: false,
         //FORM
         showFormOrder: false,
         showFormInventory: false,
@@ -87,6 +97,7 @@ let tableOrder = new Vue({
         showFormEmergencyAll: false,
         showFormLoss: false,
         showFormSignature: false,
+        showFormPurchase: false,
         //BAND-AID FIX
         emergencyLocationID: "STJN",
         temp: {},
@@ -161,6 +172,31 @@ let tableOrder = new Vue({
         }
     },
     methods: {
+        canCompletePurchase: function(order) {
+            if (order !== undefined) {
+                return order.transactionStatus !== "COMPLETE" && order.transactionType === "SALE";
+            }
+        },
+        canCompleteReturn: function(order) {
+            if (order !== undefined) {
+                return order.transactionStatus !== "COMPLETE" && order.transactionType === "RETURN";
+            }
+        },
+        canReadOrder: function(order) {
+            if (order !== undefined) {
+                return order.transactionType !== "SALE" && order.transactionType !== "RETURN";
+            }
+        },
+        canReadPurchase: function(order) {
+            if (order !== undefined) {
+                return order.transactionType === "SALE";
+            }
+        },
+        canReadReturn: function(order) {
+            if (order !== undefined) {
+                return order.transactionType === "RETURN";
+            }
+        },
         canCreateItem: function (order) {
             if (order !== undefined) {
                 return (checkPermission(["CRUD"]) || (checkPermission(["UPDATE ORDER"]) && (order.originalLocationID === curUser.locationID))) && order.transactionStatus === "NEW";
@@ -871,6 +907,109 @@ let tableOrder = new Vue({
             .catch(function (error) {
                 alert(error);
             });   
+        },
+        createStorePurchase: function() {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "INSERT INTO transaction (transactionType, originalLocationID, creationDate, estimatedArrival, transactionStatus, notes) VALUES ('SALE', ?, NOW(), NULL, 'NEW', '')",
+                        types: "s",
+                        values: [curUser.locationID]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.readTransaction();
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        createStoreReturn: function() {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "INSERT INTO transaction (transactionType, originalLocationID, creationDate, estimatedArrival, transactionStatus, notes) VALUES ('RETURN', ?, NOW(), NULL, 'NEW', '')",
+                        types: "s",
+                        values: [curUser.locationID]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.readTransaction();
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        cancelFormPurchase: function() {
+            tableOrder.showFormPurchase = false;
+        },
+        readPurchase: function (order) {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "select tl.itemID, i.itemName, i.description, i.categoryName, i.costPrice, i.retailPrice, s.companyName, tl.quantity from transactionline tl, item i, supplier s WHERE tl.itemID = i.itemID and i.supplierID = s.supplierID AND tl.transactionID = ?",
+                        types: "i",
+                        values: [order.transactionID]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.order[1] = response.data;
+                    tableOrder.order[0] = order;
+                    tableOrder.showFormPurchase = true;
+                })
+                .catch(function (error) {
+                    alert(error);
+                });
+        },
+        updatePurchaseQuantity: function (transactionID, item) {
+            if (checkInteger(item.quantity)) {
+                if (item.quantity >= 0) {
+                    axios
+                        .get("/BullsEye/api/mysqli.php", {
+                            params: {
+                                stmt: "update transactionline set quantity = ? where transactionID = ? and itemID = ?",
+                                types: "iii",
+                                values: [item.quantity, transactionID, item.itemID]
+                            }
+                        })
+                        .then(function (response) {})
+                        .catch(function (error) {
+                            alert(error);
+                        });
+                }
+            };
+        },
+        completeFormPurchase: function(order) {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL completePurchaseOrder(?)",
+                        types: "i",
+                        values: [order.transactionID]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.showFormPurchase = false;
+                })
+                .catch(function (error) {
+                    alert(error);
+                });            
+        },
+        completeFormReturn: function(order) {
+            axios
+                .get("/BullsEye/api/mysqli.php", {
+                    params: {
+                        stmt: "CALL completeReturnOrder(?)",
+                        types: "i",
+                        values: [order.transactionID]
+                    }
+                })
+                .then(function (response) {
+                    tableOrder.showFormPurchase = false;
+                })
+                .catch(function (error) {
+                    alert(error);
+                });            
         },
     },
 });
